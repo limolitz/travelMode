@@ -2,6 +2,10 @@
 
 import os
 import subprocess
+import urllib.request, urllib.error, urllib.parse, urllib.request, urllib.parse, urllib.error, http.cookiejar
+import configparser
+import ssl
+import json
 
 ignoreAdaptors = ["lo", "docker0"]
 mobileWifiNetworks = ["WIFIonICE"]
@@ -28,6 +32,10 @@ def getNetworkManagerInfo(device=""):
 	#print(nmcliInfo)
 	return nmcliInfo
 
+def sendNotification(message):
+	messageProcess = subprocess.Popen(['notify-send', "Travel Mode", message], env=dict(os.environ, LANG="LC_ALL"))
+	return
+
 def handleWifi(adaptor,network):
 	#print("Handle wifi network on {}.".format(adaptor))
 	# check if there is a wifi network connected
@@ -37,6 +45,9 @@ def handleWifi(adaptor,network):
 		if networkName in mobileWifiNetworks:
 			print("Computer is connected to a mobile wifi network.")
 			handleMobileWifi(adaptor,network)
+		else:
+			print("Computer is connected to stationay wifi network {}.".format(networkName))
+			handleStationaryWifi(adaptor,network)
 
 def handleMobileWifi(adaptor,network):
 	# disable dropbox sync
@@ -49,11 +60,33 @@ def handleMobileWifi(adaptor,network):
 		dropboxStopped, errors = dropboxCli1.communicate()
 		output = dropboxStopped.decode("utf-8")
 		print("Dropbox stopped: {}".format(output))
-
+		sendNotification(output)
 	else:
 		print("dropbox is not running.")
 
-	# TODO: disable syncthing
+	# disable syncthing
+	config = configparser.ConfigParser()
+	config.read('config.ini')
+	syncthingPort = config.get("syncthing", "port")
+	syncthingApiKey = config.get("syncthing", "apikey")
+	url = "https://localhost:{}/rest/system/shutdown".format(syncthingPort)
+
+	ctx = ssl.create_default_context()
+	ctx.check_hostname = False
+	ctx.verify_mode = ssl.CERT_NONE
+	try:
+		request = urllib.request.Request(url, data=b"", headers={"X-API-KEY": syncthingApiKey})
+		page = urllib.request.urlopen(request,context=ctx).read()
+		response = page.decode("utf-8")
+		parsedJson = json.loads(response)
+		print(parsedJson)
+		if "ok" in parsedJson.keys():
+			output = "Syncthing message: {}".format(parsedJson['ok'])
+			sendNotification(output)
+	except urllib.error.URLError as e:
+		print("Error: Syncthing not reachable. Probably not running.")
+	except Exception as e:
+		print(type(e),e)
 
 
 def getCurrentNetwork():

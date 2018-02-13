@@ -40,7 +40,20 @@ def handleWifi(adaptor,network):
 
 def handleMobileWifi(adaptor,network):
 	# disable dropbox sync
-	# disable syncthing
+	dropboxCli1 = subprocess.Popen(["/usr/bin/dropbox", "running"], stdout=subprocess.PIPE, env=dict(os.environ, LANG="LC_ALL"))
+	dropboxRunning, errors = dropboxCli1.communicate()
+	#print(dropboxRunning,errors)
+	if dropboxCli1.returncode == 1:
+		print("dropbox is running. Stopping.")
+		dropboxCli1 = subprocess.Popen(["/usr/bin/dropbox", "stop"], stdout=subprocess.PIPE, env=dict(os.environ, LANG="LC_ALL"))
+		dropboxStopped, errors = dropboxCli1.communicate()
+		output = dropboxStopped.decode("utf-8")
+		print("Dropbox stopped: {}".format(output))
+
+	else:
+		print("dropbox is not running.")
+
+	# TODO: disable syncthing
 
 
 def getCurrentNetwork():

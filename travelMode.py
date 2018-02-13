@@ -9,6 +9,7 @@ import json
 
 ignoreAdaptors = ["lo", "docker0"]
 mobileWifiNetworks = ["WIFIonICE"]
+#mobileWifiNetworks = [""]
 
 def getNetworkManagerInfo(device=""):
 	nmcli = subprocess.Popen(["/usr/bin/nmcli", "-t", "dev", "show", device], stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE, env=dict(os.environ, LANG="LC_ALL"))
@@ -29,12 +30,24 @@ def getNetworkManagerInfo(device=""):
 			print("Empty line {}. Setting to None.".format(lineContent[0]))
 			nmcliRawInfo[lineContent[0]] = None
 		#print("{}\n\n".format(line))
-	#print(nmcliInfo)
 	return nmcliInfo
 
 def sendNotification(message):
 	messageProcess = subprocess.Popen(['notify-send', "Travel Mode", message], env=dict(os.environ, LANG="LC_ALL"))
 	return
+
+def checkIfDropboxIsRunning():
+	dropboxCli1 = subprocess.Popen(["/usr/bin/dropbox", "running"], stdout=subprocess.PIPE, env=dict(os.environ, LANG="LC_ALL"))
+	dropboxRunning, errors = dropboxCli1.communicate()
+	return dropboxCli1.returncode == 1
+
+def checkIfSyncthingIsRunning():
+	syncthingCheck = subprocess.Popen(["pidof", "syncthing"], stdout=subprocess.PIPE, env=dict(os.environ, LANG="LC_ALL"))
+	syncthingOutput, errors = syncthingCheck.communicate()
+	if len(syncthingOutput) > 0:
+		return True
+	else:
+		return False
 
 def handleWifi(adaptor,network):
 	#print("Handle wifi network on {}.".format(adaptor))
@@ -50,11 +63,8 @@ def handleWifi(adaptor,network):
 			handleStationaryWifi(adaptor,network)
 
 def handleMobileWifi(adaptor,network):
-	# disable dropbox sync
-	dropboxCli1 = subprocess.Popen(["/usr/bin/dropbox", "running"], stdout=subprocess.PIPE, env=dict(os.environ, LANG="LC_ALL"))
-	dropboxRunning, errors = dropboxCli1.communicate()
-	#print(dropboxRunning,errors)
-	if dropboxCli1.returncode == 1:
+	# stop dropbox
+	if checkIfDropboxIsRunning():
 		print("dropbox is running. Stopping.")
 		dropboxCli1 = subprocess.Popen(["/usr/bin/dropbox", "stop"], stdout=subprocess.PIPE, env=dict(os.environ, LANG="LC_ALL"))
 		dropboxStopped, errors = dropboxCli1.communicate()
@@ -64,30 +74,56 @@ def handleMobileWifi(adaptor,network):
 	else:
 		print("dropbox is not running.")
 
-	# disable syncthing
-	config = configparser.ConfigParser()
-	config.read('config.ini')
-	syncthingPort = config.get("syncthing", "port")
-	syncthingApiKey = config.get("syncthing", "apikey")
-	url = "https://localhost:{}/rest/system/shutdown".format(syncthingPort)
+	# stop syncthing
+	if checkIfSyncthingIsRunning():
+		config = configparser.ConfigParser()
+		config.read('config.ini')
+		syncthingPort = config.get("syncthing", "port")
+		syncthingApiKey = config.get("syncthing", "apikey")
+		url = "https://localhost:{}/rest/system/shutdown".format(syncthingPort)
 
-	ctx = ssl.create_default_context()
-	ctx.check_hostname = False
-	ctx.verify_mode = ssl.CERT_NONE
-	try:
-		request = urllib.request.Request(url, data=b"", headers={"X-API-KEY": syncthingApiKey})
-		page = urllib.request.urlopen(request,context=ctx).read()
-		response = page.decode("utf-8")
-		parsedJson = json.loads(response)
-		print(parsedJson)
-		if "ok" in parsedJson.keys():
-			output = "Syncthing message: {}".format(parsedJson['ok'])
-			sendNotification(output)
-	except urllib.error.URLError as e:
-		print("Error: Syncthing not reachable. Probably not running.")
-	except Exception as e:
-		print(type(e),e)
+		# disable cert checking on local connection
+		ctx = ssl.create_default_context()
+		ctx.check_hostname = False
+		ctx.verify_mode = ssl.CERT_NONE
 
+		try:
+			request = urllib.request.Request(url, data=b"", headers={"X-API-KEY": syncthingApiKey})
+			page = urllib.request.urlopen(request,context=ctx).read()
+			response = page.decode("utf-8")
+			parsedJson = json.loads(response)
+
+			if "ok" in parsedJson.keys():
+				output = "Syncthing message: {}".format(parsedJson['ok'])
+				sendNotification(output)
+			else:
+				print("Unexpected message: {}".format(parsedJson))
+		except urllib.error.URLError as e:
+			print("Error: Syncthing not reachable. Probably not running.")
+		except Exception as e:
+			print(type(e),e)
+	else:
+		print("Syncthing not running.")
+
+def handleStationaryWifi(adaptor,network):
+	# check if dropbox is running
+	if not(checkIfDropboxIsRunning()):
+		# start dropbox
+		dropboxCli1 = subprocess.Popen(["dbus-launch", "dropbox", "start"], stdout=subprocess.PIPE, env=dict(os.environ, LANG="LC_ALL"))
+		dropboxRunning, errors = dropboxCli1.communicate()
+		if errors is not None and len(errors) > 0:
+			print("Errors: {}".format(errors.decode("utf-8")))
+		else:
+			sendNotification("Dropbox started.")
+	else:
+		print("Dropbox already running.")
+	# start syncthing
+	if not(checkIfSyncthingIsRunning()):
+		print("Starting syncthing")
+		syncthingLaunch = subprocess.Popen(["/home/florin/bin/syncthing.sh"], close_fds=True, env=dict(os.environ, LANG="LC_ALL"))
+		sendNotification("Syncthing started.")
+	else:
+		print("Syncthing already running.")
 
 def getCurrentNetwork():
 	# get all connected adaptors

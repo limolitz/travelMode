@@ -57,12 +57,12 @@ def handleWifi(adaptor,network):
 		print("Network {} is connected.".format(networkName))
 		if networkName in mobileWifiNetworks:
 			print("Computer is connected to a mobile wifi network.")
-			handleMobileWifi(adaptor,network)
+			handleMobileWifi()
 		else:
 			print("Computer is connected to stationay wifi network {}.".format(networkName))
-			handleStationaryWifi(adaptor,network)
+			handleStationaryWifi()
 
-def handleMobileWifi(adaptor,network):
+def handleMobileWifi():
 	# stop dropbox
 	if checkIfDropboxIsRunning():
 		print("dropbox is running. Stopping.")
@@ -76,6 +76,7 @@ def handleMobileWifi(adaptor,network):
 
 	# stop syncthing
 	if checkIfSyncthingIsRunning():
+		print("Stopping syncthing")
 		config = configparser.ConfigParser()
 		config.read('config.ini')
 		syncthingPort = config.get("syncthing", "port")
@@ -105,12 +106,14 @@ def handleMobileWifi(adaptor,network):
 	else:
 		print("Syncthing not running.")
 
-def handleStationaryWifi(adaptor,network):
+def handleStationaryWifi():
 	# check if dropbox is running
 	if not(checkIfDropboxIsRunning()):
 		# start dropbox
+		print("Starting dropbox")
 		dropboxCli1 = subprocess.Popen(["dbus-launch", "dropbox", "start"], stdout=subprocess.PIPE, env=dict(os.environ, LANG="LC_ALL"))
 		dropboxRunning, errors = dropboxCli1.communicate()
+		print(dropboxRunning)
 		if errors is not None and len(errors) > 0:
 			print("Errors: {}".format(errors.decode("utf-8")))
 		else:
@@ -132,13 +135,37 @@ def getCurrentNetwork():
 	for adaptor in adaptors:
 		if adaptor in ignoreAdaptors:
 			continue
-		#print("Handling network {}".format(adaptor))
+		#print("Handling adaptor {}".format(adaptor))
 		networkInfo = getNetworkManagerInfo(adaptor)
+		#print(networkInfo)
 		# look for wireless network (wifi)
 		# TODO: also check for tethered USB connection
 		if networkInfo['GENERAL.TYPE'] == "wifi":
 			#print("Wifi network found: {}.".format(adaptor))
 			handleWifi(adaptor,networkInfo)
-
+		elif networkInfo['GENERAL.TYPE'] == "ethernet":
+			# ethernet connection, might still be tethered USB, probably metered as well
+			# get driver via ethtool
+			ethtool = subprocess.Popen(["ethtool", "-i", adaptor], stdout=subprocess.PIPE, env=dict(os.environ, LANG="LC_ALL"))
+			ethtoolOutput, errors = ethtool.communicate()
+			ethInfo = {}
+			for line in ethtoolOutput.decode("utf-8").rstrip().split("\n"):
+				lineContent = line.split(":", 1)
+				identifier = lineContent[0].strip()
+				value = lineContent[1].strip()
+				#print(identifier,value)
+				ethInfo[identifier] = value
+			#print(ethInfo)
+			if "driver" in ethInfo.keys():
+				if ethInfo["driver"] == "ipheth":
+					print("iPhone network. Assuming as metered.")
+					sendNotification("Tethered to an iPhone.")
+					handleMobileWifi()
+				elif ethInfo["driver"] == "e1000e":
+					# normal ethernet connection, ignoring
+					True
+				else:
+					print("Unknown driver {} on adaptor {}.".format(ethInfo["driver"],adaptor))
+					sendNotification("Unknown driver {} on adaptor {}.".format(ethInfo["driver"],adaptor))
 if __name__ == '__main__':
 	getCurrentNetwork()

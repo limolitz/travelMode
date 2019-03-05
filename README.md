@@ -7,10 +7,10 @@ Travel mode checks your currently used wifi to disable traffic-heavy application
 
 ## Currently supported network types
 * Wifi (determined to be mobile after a list of network names inside `travelMode.py`)
-* Tethered iPhones (determined after network driver as shows by `ethtool`)
+* Tethered iPhones (determined after network driver as shown by `ethtool`)
+* Tethered Android phones (determined after network driver as shown by `ethtool`)
 
 ## Planned
-* Support tethered Android phones
 * Any other applications you need?
 
 # Installation

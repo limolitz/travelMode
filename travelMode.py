@@ -8,7 +8,7 @@ import ssl
 import json
 
 ignoreAdaptors = ["lo", "docker0"]
-mobileWifiNetworks = ["WIFIonICE"]
+mobileWifiNetworks = ["WIFIonICE", "AndroidAP"]
 #mobileWifiNetworks = [""]
 
 def getNetworkManagerInfo(device=""):
@@ -160,6 +160,10 @@ def getCurrentNetwork():
 				if ethInfo["driver"] == "ipheth":
 					print("iPhone network. Assuming as metered.")
 					sendNotification("Tethered to an iPhone.")
+					handleMobileWifi()
+				if ethInfo["driver"] == "rndis_host":
+					print("Android network. Assuming as metered.")
+					sendNotification("Tethered to an Android device.")
 					handleMobileWifi()
 				elif ethInfo["driver"] == "e1000e":
 					# normal ethernet connection, ignoring
